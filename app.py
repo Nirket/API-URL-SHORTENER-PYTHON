@@ -1,33 +1,36 @@
-from flask import Flask, request, redirect, render_template
-from models import db, Link
-import string, random
+from flask import Flask, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
+import os
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///links.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///urls.db')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_secret_key')
 
-db.init_app(app)
+db = SQLAlchemy(app)
 
-def generate_short_link(num_chars=6):
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=num_chars))
+class URL(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    original_url = db.Column(db.String(500), nullable=False)
+    short_url = db.Column(db.String(100), unique=True, nullable=False)
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        original_url = request.form['original_url']
-        short_link = generate_short_link()
-        new_link = Link(original_url=original_url, short_link=short_link)
-        db.session.add(new_link)
-        db.session.commit()
-        return render_template('index.html', short_link=short_link)
-    return render_template('index.html')
+    return "Welcome to the URL shortener!"
 
-@app.route('/<short_link>')
-def redirect_to_url(short_link):
-    link = Link.query.filter_by(short_link=short_link).first_or_404()
+@app.route('/<short_url>')
+def redirect_to_url(short_url):
+    link = URL.query.filter_by(short_url=short_url).first_or_404()
     return redirect(link.original_url)
 
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    app.run(debug=True)
+@app.route('/shorten', methods=['POST'])
+def shorten_url():
+    original_url = request.form['original_url']
+    short_url = original_url.split('//')[-1]  # Simplified short URL generation
+    new_link = URL(original_url=original_url, short_url=short_url)
+    db.session.add(new_link)
+    db.session.commit()
+    return f'Short URL is: {url_for("redirect_to_url", short_url=short_url, _external=True)}'
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
